@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate Pong Game</title>
+
+<style>
+body {
+    margin: 0;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: Arial;
+}
+
+.container {
+    text-align: center;
+    color: white;
+}
+
+canvas {
+    background: black;
+    border: 3px solid white;
+    box-shadow: 0 0 20px black;
+    touch-action: none;
+}
+
+.controls {
+    margin-top: 10px;
+}
+
+.powerup {
+    position: absolute;
+    color: yellow;
+    font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <h1>🔥 Ultimate Pong</h1>
+    <canvas id="gameCanvas"></canvas>
+
+    <div>
+        Player: <span id="pScore">0</span> |
+        Computer: <span id="cScore">0</span> |
+        🏆 High Score: <span id="highScore">0</span>
+    </div>
+
+    <div class="controls">
+        Speed:
+        <input type="range" id="speed" min="3" max="12" value="5">
+
+        Difficulty:
+        <select id="difficulty">
+            <option value="3">Easy</option>
+            <option value="5" selected>Medium</option>
+            <option value="8">Hard</option>
+        </select>
+
+        <button onclick="togglePause()">Pause</button>
+        <button onclick="resetGame()">Reset</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Responsive
+function resizeCanvas() {
+    canvas.width = window.innerWidth * 0.7;
+    canvas.height = window.innerHeight * 0.6;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+// Audio
+const hitSound = new Audio("https://actions.google.com/sounds/v1/impacts/wood_plank_flicks.ogg");
+const scoreSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+
+// Game State
+let playerScore = 0;
+let computerScore = 0;
+let highScore = localStorage.getItem("pongHigh") || 0;
+document.getElementById("highScore").textContent = highScore;
+
+let isPaused = false;
+const WIN_SCORE = 10;
+
+// Paddle
+const paddle = { width: 10, height: 100 };
+
+const player = { x: 10, y: 100 };
+const computer = { x: 0, y: 100 };
+
+// Ball
+const ball = {
+    x: 0, y: 0,
+    size: 8,
+    speed: 5,
+    dx: 5,
+    dy: 5,
+    maxSpeed: 15
+};
+
+// Powerups
+let powerUps = [];
+
+function spawnPowerUp() {
+    const types = ["speed", "big", "slow"];
+    powerUps.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        type: types[Math.floor(Math.random()*types.length)],
+        size: 10
+    });
+}
+setInterval(spawnPowerUp, 5000);
+
+// Reset Ball
+function resetBall() {
+    ball.x = canvas.width / 2;
+    ball.y = canvas.height / 2;
+    ball.dx = (Math.random()>0.5?1:-1)*ball.speed;
+    ball.dy = (Math.random()>0.5?1:-1)*ball.speed;
+}
+
+// Touch + Mouse
+function movePlayer(y) {
+    player.y = y - paddle.height/2;
+}
+
+canvas.addEventListener("mousemove", e=>{
+    const rect = canvas.getBoundingClientRect();
+    movePlayer(e.clientY - rect.top);
+});
+
+canvas.addEventListener("touchmove", e=>{
+    const rect = canvas.getBoundingClientRect();
+    movePlayer(e.touches[0].clientY - rect.top);
+});
+
+// Update
+function update() {
+    if (isPaused) return;
+
+    const speedMultiplier = document.getElementById("speed").value / 5;
+
+    ball.x += ball.dx * speedMultiplier;
+    ball.y += ball.dy * speedMultiplier;
+
+    // Walls
+    if (ball.y <= 0 || ball.y >= canvas.height) ball.dy *= -1;
+
+    // Paddle collision
+    if (ball.x <= player.x + paddle.width &&
+        ball.y > player.y && ball.y < player.y + paddle.height) {
+        ball.dx *= -1;
+        accelerateBall();
+        hitSound.play();
+    }
+
+    if (ball.x >= computer.x &&
+        ball.y > computer.y && ball.y < computer.y + paddle.height) {
+        ball.dx *= -1;
+        accelerateBall();
+        hitSound.play();
+    }
+
+    // Powerups collision
+    powerUps.forEach((p,i)=>{
+        if (Math.abs(ball.x - p.x) < 10 && Math.abs(ball.y - p.y) < 10) {
+            applyPowerUp(p.type);
+            powerUps.splice(i,1);
+        }
+    });
+
+    // Score
+    if (ball.x < 0) {
+        computerScore++;
+        scoreSound.play();
+        resetBall();
+    }
+
+    if (ball.x > canvas.width) {
+        playerScore++;
+        scoreSound.play();
+        if (playerScore > highScore) {
+            highScore = playerScore;
+            localStorage.setItem("pongHigh", highScore);
+        }
+        resetBall();
+    }
+
+    document.getElementById("pScore").textContent = playerScore;
+    document.getElementById("cScore").textContent = computerScore;
+    document.getElementById("highScore").textContent = highScore;
+
+    checkWinner();
+
+    // AI
+    const aiSpeed = parseFloat(document.getElementById("difficulty").value);
+    let target = ball.y - paddle.height/2 + ball.dy*5;
+    if (computer.y < target) computer.y += aiSpeed;
+    else computer.y -= aiSpeed;
+
+    computer.x = canvas.width - 20;
+}
+
+// Powerup Effects
+function applyPowerUp(type) {
+    if (type === "speed") ball.speed += 2;
+    if (type === "slow") ball.speed -= 2;
+    if (type === "big") paddle.height += 20;
+
+    setTimeout(()=>{ paddle.height = 100; }, 5000);
+}
+
+// Acceleration
+function accelerateBall() {
+    ball.speed = Math.min(ball.speed + 0.3, ball.maxSpeed);
+    ball.dx = (ball.dx>0?1:-1)*ball.speed;
+}
+
+// Draw
+function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "white";
+
+    ctx.fillStyle = "#00ffff";
+    ctx.fillRect(player.x, player.y, paddle.width, paddle.height);
+
+    ctx.fillStyle = "#ff9900";
+    ctx.fillRect(computer.x, computer.y, paddle.width, paddle.height);
+
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI*2);
+    ctx.fillStyle = "white";
+    ctx.fill();
+
+    // Draw Powerups
+    powerUps.forEach(p=>{
+        ctx.fillStyle = "yellow";
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+    });
+}
+
+// Loop
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Pause
+function togglePause() {
+    isPaused = !isPaused;
+}
+
+// Reset
+function resetGame() {
+    playerScore = 0;
+    computerScore = 0;
+    ball.speed = 5;
+    paddle.height = 100;
+    resetBall();
+}
+
+// Winner
+function checkWinner() {
+    if (playerScore >= WIN_SCORE) {
+        alert("🏆 You Win!");
+        resetGame();
+    }
+    if (computerScore >= WIN_SCORE) {
+        alert("💻 Computer Wins!");
+        resetGame();
+    }
+}
+
+// Init
+resetBall();
+gameLoop();
+
+</script>
+
+</body>
+</html>
