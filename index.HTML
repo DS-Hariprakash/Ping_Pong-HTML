@@ -32,6 +32,20 @@ canvas {
     margin-top: 10px;
 }
 
+.advanced {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+}
+
+.advanced strong {
+    width: 100%;
+    text-align: center;
+}
+
 .powerup {
     position: absolute;
     color: yellow;
@@ -65,6 +79,27 @@ canvas {
 
         <button onclick="togglePause()">Pause</button>
         <button onclick="resetGame()">Reset</button>
+
+        <div class="advanced">
+            <strong>Advanced:</strong>
+            Ball Size:
+            <select id="ballSize" onchange="setBallSize(this.value)">
+                <option value="5">Small</option>
+                <option value="8" selected>Medium</option>
+                <option value="12">Large</option>
+            </select>
+
+            AI Mode:
+            <select id="aiMode" onchange="setAIMode(this.value)">
+                <option value="normal" selected>Normal</option>
+                <option value="predictive">Predictive</option>
+                <option value="reactive">Reactive</option>
+            </select>
+
+            <button onclick="togglePowerUps()" id="powerupsBtn">Power-ups: On</button>
+            <button onclick="toggleSound()" id="soundBtn">Sound: On</button>
+            <button onclick="toggleTrail()" id="trailBtn">Trail: Off</button>
+        </div>
     </div>
 </div>
 
@@ -109,16 +144,30 @@ const ball = {
     maxSpeed: 15
 };
 
-// Powerups
+// Powerups and game options
 let powerUps = [];
+let powerUpsEnabled = true;
+let soundEnabled = true;
+let trailEnabled = false;
+let aiMode = "normal";
+let keyState = { up: false, down: false };
+let trailHistory = [];
+
+function playSound(sound) {
+    if (!soundEnabled) return;
+    sound.currentTime = 0;
+    sound.play().catch(() => {});
+}
 
 function spawnPowerUp() {
+    if (!powerUpsEnabled) return;
+
     const types = ["speed", "big", "slow"];
     powerUps.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        type: types[Math.floor(Math.random()*types.length)],
-        size: 10
+        x: 20 + Math.random() * (canvas.width - 40),
+        y: 20 + Math.random() * (canvas.height - 40),
+        type: types[Math.floor(Math.random() * types.length)],
+        size: 12
     });
 }
 setInterval(spawnPowerUp, 5000);
@@ -131,19 +180,29 @@ function resetBall() {
     ball.dy = (Math.random()>0.5?1:-1)*ball.speed;
 }
 
-// Touch + Mouse
+// Touch, Mouse, and Keyboard
 function movePlayer(y) {
-    player.y = y - paddle.height/2;
+    player.y = Math.min(Math.max(y - paddle.height / 2, 0), canvas.height - paddle.height);
 }
 
-canvas.addEventListener("mousemove", e=>{
+canvas.addEventListener("mousemove", e => {
     const rect = canvas.getBoundingClientRect();
     movePlayer(e.clientY - rect.top);
 });
 
-canvas.addEventListener("touchmove", e=>{
+canvas.addEventListener("touchmove", e => {
     const rect = canvas.getBoundingClientRect();
     movePlayer(e.touches[0].clientY - rect.top);
+});
+
+window.addEventListener("keydown", e => {
+    if (e.key === "ArrowUp" || e.key.toLowerCase() === "w") keyState.up = true;
+    if (e.key === "ArrowDown" || e.key.toLowerCase() === "s") keyState.down = true;
+});
+
+window.addEventListener("keyup", e => {
+    if (e.key === "ArrowUp" || e.key.toLowerCase() === "w") keyState.up = false;
+    if (e.key === "ArrowDown" || e.key.toLowerCase() === "s") keyState.down = false;
 });
 
 // Update
@@ -152,45 +211,62 @@ function update() {
 
     const speedMultiplier = document.getElementById("speed").value / 5;
 
+    if (keyState.up) player.y = Math.max(player.y - 7, 0);
+    if (keyState.down) player.y = Math.min(player.y + 7, canvas.height - paddle.height);
+
     ball.x += ball.dx * speedMultiplier;
     ball.y += ball.dy * speedMultiplier;
 
-    // Walls
-    if (ball.y <= 0 || ball.y >= canvas.height) ball.dy *= -1;
-
-    // Paddle collision
-    if (ball.x <= player.x + paddle.width &&
-        ball.y > player.y && ball.y < player.y + paddle.height) {
-        ball.dx *= -1;
-        accelerateBall();
-        hitSound.play();
+    if (trailEnabled) {
+        trailHistory.unshift({ x: ball.x, y: ball.y });
+        if (trailHistory.length > 25) trailHistory.pop();
+    } else {
+        trailHistory = [];
     }
 
-    if (ball.x >= computer.x &&
-        ball.y > computer.y && ball.y < computer.y + paddle.height) {
-        ball.dx *= -1;
+    // Walls
+    if (ball.y <= 0) {
+        ball.y = 0;
+        ball.dy *= -1;
+    } else if (ball.y >= canvas.height) {
+        ball.y = canvas.height;
+        ball.dy *= -1;
+    }
+
+    // Paddle collision
+    if (ball.x <= player.x + paddle.width && ball.x >= player.x &&
+        ball.y > player.y && ball.y < player.y + paddle.height && ball.dx < 0) {
+        calculateReflection(player.x);
         accelerateBall();
-        hitSound.play();
+        playSound(hitSound);
+    }
+
+    if (ball.x + ball.size >= computer.x && ball.x <= computer.x + paddle.width &&
+        ball.y > computer.y && ball.y < computer.y + paddle.height && ball.dx > 0) {
+        calculateReflection(computer.x);
+        accelerateBall();
+        playSound(hitSound);
     }
 
     // Powerups collision
-    powerUps.forEach((p,i)=>{
-        if (Math.abs(ball.x - p.x) < 10 && Math.abs(ball.y - p.y) < 10) {
+    powerUps = powerUps.filter(p => {
+        if (Math.abs(ball.x - p.x) < p.size && Math.abs(ball.y - p.y) < p.size) {
             applyPowerUp(p.type);
-            powerUps.splice(i,1);
+            return false;
         }
+        return true;
     });
 
     // Score
     if (ball.x < 0) {
         computerScore++;
-        scoreSound.play();
+        playSound(scoreSound);
         resetBall();
     }
 
     if (ball.x > canvas.width) {
         playerScore++;
-        scoreSound.play();
+        playSound(scoreSound);
         if (playerScore > highScore) {
             highScore = playerScore;
             localStorage.setItem("pongHigh", highScore);
@@ -206,34 +282,92 @@ function update() {
 
     // AI
     const aiSpeed = parseFloat(document.getElementById("difficulty").value);
-    let target = ball.y - paddle.height/2 + ball.dy*5;
-    if (computer.y < target) computer.y += aiSpeed;
+    let target;
+
+    if (aiMode === "predictive") {
+        target = ball.y + ball.dy * 18;
+    } else if (aiMode === "reactive") {
+        target = ball.y;
+    } else {
+        target = ball.y - paddle.height / 2 + ball.dy * 5;
+    }
+
+    if (computer.y + paddle.height / 2 < target) computer.y += aiSpeed;
     else computer.y -= aiSpeed;
 
+    computer.y = Math.min(Math.max(computer.y, 0), canvas.height - paddle.height);
     computer.x = canvas.width - 20;
 }
 
 // Powerup Effects
 function applyPowerUp(type) {
-    if (type === "speed") ball.speed += 2;
-    if (type === "slow") ball.speed -= 2;
-    if (type === "big") paddle.height += 20;
+    if (type === "speed") ball.speed = Math.min(ball.speed + 2, ball.maxSpeed);
+    if (type === "slow") ball.speed = Math.max(ball.speed - 2, 3);
+    if (type === "big") paddle.height = Math.min(paddle.height + 25, 180);
 
-    setTimeout(()=>{ paddle.height = 100; }, 5000);
+    setTimeout(() => { paddle.height = 100; }, 5000);
+}
+
+function calculateReflection(paddleX) {
+    const paddleY = paddleX === player.x ? player.y : computer.y;
+    const relativeY = (ball.y - paddleY) / paddle.height;
+    const bounceAngle = (relativeY - 0.5) * Math.PI / 2;
+    const direction = paddleX === player.x ? 1 : -1;
+
+    ball.dx = Math.cos(bounceAngle) * ball.speed * direction;
+    ball.dy = Math.sin(bounceAngle) * ball.speed;
 }
 
 // Acceleration
 function accelerateBall() {
+    const angle = Math.atan2(ball.dy, ball.dx);
     ball.speed = Math.min(ball.speed + 0.3, ball.maxSpeed);
-    ball.dx = (ball.dx>0?1:-1)*ball.speed;
+    ball.dx = Math.cos(angle) * ball.speed;
+    ball.dy = Math.sin(angle) * ball.speed;
+}
+
+function togglePowerUps() {
+    powerUpsEnabled = !powerUpsEnabled;
+    document.getElementById("powerupsBtn").textContent = `Power-ups: ${powerUpsEnabled ? "On" : "Off"}`;
+    if (!powerUpsEnabled) powerUps = [];
+}
+
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    document.getElementById("soundBtn").textContent = `Sound: ${soundEnabled ? "On" : "Off"}`;
+}
+
+function toggleTrail() {
+    trailEnabled = !trailEnabled;
+    document.getElementById("trailBtn").textContent = `Trail: ${trailEnabled ? "On" : "Off"}`;
+    if (!trailEnabled) trailHistory = [];
+}
+
+function setBallSize(size) {
+    ball.size = parseInt(size, 10);
+}
+
+function setAIMode(mode) {
+    aiMode = mode;
 }
 
 // Draw
 function draw() {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.shadowBlur = 10;
     ctx.shadowColor = "white";
+
+    if (trailEnabled && trailHistory.length) {
+        ctx.strokeStyle = "rgba(255,255,255,0.3)";
+        ctx.lineWidth = ball.size;
+        ctx.beginPath();
+        trailHistory.forEach((pos, index) => {
+            if (index === 0) ctx.moveTo(pos.x, pos.y);
+            else ctx.lineTo(pos.x, pos.y);
+        });
+        ctx.stroke();
+    }
 
     ctx.fillStyle = "#00ffff";
     ctx.fillRect(player.x, player.y, paddle.width, paddle.height);
@@ -242,12 +376,12 @@ function draw() {
     ctx.fillRect(computer.x, computer.y, paddle.width, paddle.height);
 
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI*2);
+    ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI * 2);
     ctx.fillStyle = "white";
     ctx.fill();
 
     // Draw Powerups
-    powerUps.forEach(p=>{
+    powerUps.forEach(p => {
         ctx.fillStyle = "yellow";
         ctx.fillRect(p.x, p.y, p.size, p.size);
     });

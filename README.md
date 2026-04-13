@@ -9,6 +9,7 @@ Ultimate Pong is a browser-based arcade game built with HTML, CSS, and JavaScrip
 - Computer AI opponent with selectable difficulty levels
 - Ball speed adjustments and automatic acceleration after paddle hits
 - Randomly spawning power-ups: speed boost, slow effect, and bigger paddle
+- Advanced options: ball size selector, AI behavior modes, power-up toggle, sound toggle, and trail effects
 - Sound effects for ball hits and scoring
 - Score display for player, computer, and persistent high score saved in `localStorage`
 - Pause and reset buttons for quick game control
@@ -37,6 +38,9 @@ http://localhost:8000
 - On touch devices, drag your finger on the canvas.
 - Use the Speed slider to adjust the ball movement multiplier.
 - Use the Difficulty selector to change the AI paddle speed.
+- Select ball size from the advanced panel to switch between small, medium, and large mode.
+- Choose AI mode to change computer opponent behavior: Normal, Predictive, or Reactive.
+- Use the advanced panel to toggle power-ups, sound, and trail effects.
 - Click Pause to freeze the game.
 - Click Reset to restart scores and reset ball/paddle state.
 
